@@ -30,5 +30,8 @@ rbt-test : rbt-test.o librbt.a
 main.o  : main.c
 audio.o : audio.c
 
-main : main.o audio.o
-	${LINK.c} -lSDL2 -o ${.TARGET} ${.ALLSRC:M*.o}
+main : main.o audio.o entities.o queue.o librbt.a
+	${LINK.c} -lSDL2 -lrbt -o ${.TARGET} ${.ALLSRC:M*.o}
+
+queue-test : queue-test.o queue.o
+	${LINK.c} -o ${.TARGET} ${.ALLSRC:M*.o}
