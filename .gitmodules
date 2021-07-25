@@ -1,0 +1,6 @@
+[submodule "pocketmod"]
+	path = pocketmod
+	url = https://github.com/rombankzero/pocketmod.git
+[submodule "stb"]
+	path = stb
+	url = https://github.com/nothings/stb.git
