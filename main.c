@@ -18,14 +18,19 @@
 
 enum {CD_NONE=0,CD_RIGHT=1,CD_UP=2,CD_LEFT=3,CD_DOWN=4};
 
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <unistd.h>
+#endif
+
 static char const * song_path="songs/untitled.mod";
 static char const * sprite_path="images/spritesheet.png";
-static float * scratch;
-
 static char const * sfx_paths[] = {
 	"sfx/bweeop.mod",
 	"sfx/fssssh.mod"
 };
+
+static float * scratch;
 
 enum {
 	SPELL_NONE = 0,
@@ -76,8 +81,24 @@ static void draw_hp_bar(SDL_Renderer * renderer, SDL_Texture * spritesheet,
 static int parse_cast(struct trie *, struct queue *, int *, int *, int *);
 
 int
-main(int argc, char **argv)
+main(void)
 {
+	#ifdef __APPLE__
+	CFBundleRef bundle = CFBundleGetMainBundle();
+	CFURLRef url;
+	CFStringRef fpr;
+	char const * thepath;
+	url = CFBundleCopyBundleURL(CFBundleGetMainBundle());
+	fpr = CFURLCopyPath(url);
+	thepath = CFStringGetCStringPtr(fpr, kCFStringEncodingUTF8);
+	chdir(thepath);
+	url = CFBundleCopyResourcesDirectoryURL(CFBundleGetMainBundle());
+	fpr = CFURLCopyPath(url);
+	thepath = CFStringGetCStringPtr(fpr, kCFStringEncodingUTF8);
+	chdir(thepath);
+	CFRelease(fpr);
+	CFRelease(url);
+	#endif
 	struct SoundManager manager;
 	SDL_RWops *mod_file;
 	char* mod_data;
@@ -87,8 +108,6 @@ main(int argc, char **argv)
 	SDL_Window * window;
 	SDL_Renderer * renderer;
 	int i;
-
-	if (argc > 1) song_path = argv[1];
 
 	if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO))
 	{
@@ -170,268 +189,352 @@ main(int argc, char **argv)
 	}
 	init_spells(spells);
 
-	SDL_PauseAudioDevice(device, 0);
 	SDL_Event event;
 	i = 0;
 	int cdir = 0;
-	char eighths[5];
 	int es = 0;
 	int upgraded = 0;
-	snprintf(eighths,5,"%4d",es);
 	int modulate = 2;
 	if (manager.bgm->ticks_per_line <= 3)
 	{
 		modulate = 4;
 	}
-	struct queue cast = {.head = NULL, .tail = NULL};
-	struct queue entities = {.head = NULL, .tail = NULL};
-	int max_hp = 30;
-	int hp = max_hp;
-	queue_add(&entities, phoenix(96, 16));
 	int proceed = 1;
-	while (proceed)
+	int quit = 0;
+	struct queue entities = {.head = NULL, .tail = NULL};
+	struct queue cast = {.head = NULL, .tail = NULL};
+	while (!quit)
 	{
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-		SDL_RenderClear(renderer);
-		SDL_SetRenderDrawColor(renderer, 77, 190, 255, 255);
-		SDL_RenderFillRect(renderer, NULL);
-		if (0 == (manager.bgm->line & modulate) && !upgraded)
+		int max_hp = 30;
+		int hp = max_hp;
+		proceed = 1;
+		queue_add(&entities, phoenix(96, 16));
+		queue_add(&entities, slime(80, 60));
+		/* title screen */
+		SDL_PauseAudioDevice(device, 1);
+		while (proceed)
 		{
-			upgraded = 1;
-			es += 1;
-			es %= 10000;
-			snprintf(eighths,5,"%4d",es);
-			int qs = queue_size(&cast);
-			if ((qs > 0 || cdir) && qs < 11)
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+			SDL_RenderClear(renderer);
+			SDL_SetRenderDrawColor(renderer, 77, 190, 255, 255);
+			SDL_RenderFillRect(renderer, NULL);
+			text(renderer, texture, "CASTING",
+			     (SCR_WIDTH-7*FONT_WIDTH)/2,
+			     SCR_HEIGHT/2-TILE_SIZE);
+			text(renderer, texture, "COLLOSEUM",
+			     (SCR_WIDTH-9*FONT_WIDTH)/2,
+			     SCR_HEIGHT/2);
+			SDL_RenderPresent(renderer);
+			if (SDL_WaitEventTimeout(&event, 16))
 			{
-				int * x = malloc(sizeof(int));
-				if (x) {
-					*x = cdir;
-					queue_add(&cast, x);
-				}
-			}
-		}
-		else if (0 != (manager.bgm->line & modulate))
-		{
-			upgraded = 0;
-		}
-		else
-		{
-			if (cast.tail && cast.tail->data)
-			{
-				if (cast.tail != cast.head || cdir)
+				switch (event.type)
 				{
-					*(int*)(cast.tail->data) = cdir;
-				}
-			}
-			else if (cast.tail != cast.head || cdir)
-			{
-				int * x = malloc(sizeof(int));
-				if (x) {
-					*x = cdir;
-					queue_add(&cast,x);
-				}
-			}
-		}
-		struct queue_list * entity = entities.head;
-		while (entity)
-		{
-			draw_entity(renderer, texture, entity->data);
-			entity = entity->next;
-		}
-		draw_player(renderer, texture, cdir, hp, max_hp, 24, 64);
-		show_cast(renderer, texture, &cast);
-		show_spellbook(renderer, texture);
-		SDL_RenderPresent(renderer);
-		int do_cast = 0;
-		if (SDL_WaitEventTimeout(&event, 16))
-		{
-			switch (event.type)
-			{
-			case SDL_QUIT:
-				proceed = 0;
-				break;
-			case SDL_KEYUP:
-				switch (event.key.keysym.scancode)
-				{
-				case SDL_SCANCODE_W:
-					if (cdir == CD_UP) {cdir=0;}
-					break;
-				case SDL_SCANCODE_A:
-					if (cdir == CD_LEFT) {cdir=0;}
-					break;
-				case SDL_SCANCODE_S:
-					if (cdir == CD_DOWN) {cdir=0;}
-					break;
-				case SDL_SCANCODE_D:
-					if (cdir == CD_RIGHT) {cdir=0;}
-					break;
-				default:
-					break;
-				}
-				break;
-			case SDL_KEYDOWN:
-				if (event.key.repeat) {break;}
-				switch (event.key.keysym.scancode)
-				{
-				case SDL_SCANCODE_W:
-					cdir=CD_UP;
-					sfx(&manager, format.freq, 1);
-					break;
-				case SDL_SCANCODE_A:
-					cdir=CD_LEFT;
-					sfx(&manager, format.freq, 1);
-					break;
-				case SDL_SCANCODE_S:
-					cdir=CD_DOWN;
-					sfx(&manager, format.freq, 1);
-					break;
-				case SDL_SCANCODE_D:
-					cdir=CD_RIGHT;
-					sfx(&manager, format.freq, 1);
-					break;
-				case SDL_SCANCODE_ESCAPE:
+				case SDL_QUIT:
+					quit = 1;
+					/* fallthrough */
+				case SDL_KEYDOWN:
+					if (event.key.keysym.scancode
+					    == SDL_SCANCODE_ESCAPE)
+					{
+						quit = 1;
+					}
 					proceed = 0;
 					break;
-				case SDL_SCANCODE_SPACE:
-					do_cast = 1;
-					sfx(&manager, format.freq, 0);
-					break;
 				default:
 					break;
 				}
-				break;
-			default:
-				break;
 			}
 		}
-		if (do_cast)
+		
+		SDL_PauseAudioDevice(device, 0);
+		pocketmod_init(manager.bgm, mod_data, mod_size, format.freq);
+		proceed = 1;
+		/* main game */
+		while (proceed && !quit)
 		{
-			int dmg_f = 0;
-			int dmg_w = 0;
-			int heal = 0;
-			int block =
-				parse_cast(spells, &cast,
-				           &dmg_f,
-				           &dmg_w,
-				           &heal);
-			struct queue_list * entity_n = entities.head;
-			while (entity_n)
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+			SDL_RenderClear(renderer);
+			SDL_SetRenderDrawColor(renderer, 77, 190, 255, 255);
+			SDL_RenderFillRect(renderer, NULL);
+			if (0 == (manager.bgm->line & modulate) && !upgraded)
 			{
-				int destroy = 0;
-				struct rbt_tree * entity
-					= (struct rbt_tree*)(entity_n->data);
-				struct rbt_tree * c;
-				c = rbt_find(entity, COMP_TYPE);
-				int t = -1;
-				if (c && c->data) {t = *(int*)(c->data);}
-				if (t == ENTITY_PHOENIX && dmg_f != 0)
+				upgraded = 1;
+				es += 1;
+				es %= 10000;
+				int qs = queue_size(&cast);
+				if ((qs > 0 || cdir) && qs < 11)
 				{
-					int entity_x = 0;
-					c = rbt_find(entity, COMP_X);
-					if (c && c->data)
-					{
-						entity_x = *(int*)(c->data);
+					int * x = malloc(sizeof(int));
+					if (x) {
+						*x = cdir;
+						queue_add(&cast, x);
 					}
-					struct queue_list * t = entities.tail;
-					struct rbt_tree * tx =
-						(struct rbt_tree *)(t->data);
-					tx = rbt_find(tx, COMP_X);
-					if (tx && tx->data)
-					{
-						entity_x = *(int*)(tx->data);
-					}
-					queue_add(&entities,
-					          egg(entity_x + TILE_SIZE,
-					              60));
 				}
-				int emhp = 0;
-				c = rbt_find(entity, COMP_MAX_HP);
-				if (c && c->data) {emhp = *(int*)(c->data);}
-				int ehp = 1;
-				c = rbt_find(entity, COMP_HP);
-				if (c && c->data) {ehp = *(int*)(c->data);}
-				switch (t)
+			}
+			else if (0 != (manager.bgm->line & modulate))
+			{
+				upgraded = 0;
+			}
+			else
+			{
+				if (cast.tail && cast.tail->data)
 				{
-				case ENTITY_PHOENIX:
-					ehp -= dmg_w;
-					if (ehp < 0) {ehp = 0;}
-					if (!block){hp -= 8;}
+					if (cast.tail != cast.head || cdir)
+					{
+						*(int*)(cast.tail->data) = cdir;
+					}
+				}
+				else if (cast.tail != cast.head || cdir)
+				{
+					int * x = malloc(sizeof(int));
+					if (x) {
+						*x = cdir;
+						queue_add(&cast,x);
+					}
+				}
+			}
+			struct queue_list * entity = entities.head;
+			while (entity)
+			{
+				draw_entity(renderer, texture, entity->data);
+				entity = entity->next;
+			}
+			draw_player(renderer, texture, cdir, hp, max_hp, 24, 64);
+			show_cast(renderer, texture, &cast);
+			show_spellbook(renderer, texture);
+			SDL_RenderPresent(renderer);
+			int do_cast = 0;
+			if (SDL_WaitEventTimeout(&event, 16))
+			{
+				switch (event.type)
+				{
+				case SDL_QUIT:
+					proceed = 0;
+					quit = 1;
 					break;
-				case ENTITY_SLIME:
-					ehp -= dmg_f;
-					ehp += dmg_w;
-					if (ehp < 0) {ehp = 0;}
-					if (ehp > emhp) {ehp = emhp;}
-					if (!block){hp -= 4;}
+				case SDL_KEYUP:
+					switch (event.key.keysym.scancode)
+					{
+					case SDL_SCANCODE_W:
+						if (cdir == CD_UP) {cdir=0;}
+						break;
+					case SDL_SCANCODE_A:
+						if (cdir == CD_LEFT) {cdir=0;}
+						break;
+					case SDL_SCANCODE_S:
+						if (cdir == CD_DOWN) {cdir=0;}
+						break;
+					case SDL_SCANCODE_D:
+						if (cdir == CD_RIGHT) {cdir=0;}
+						break;
+					default:
+						break;
+					}
+					break;
+				case SDL_KEYDOWN:
+					if (event.key.repeat) {break;}
+					switch (event.key.keysym.scancode)
+					{
+					case SDL_SCANCODE_W:
+						cdir=CD_UP;
+						sfx(&manager, format.freq, 1);
+						break;
+					case SDL_SCANCODE_A:
+						cdir=CD_LEFT;
+						sfx(&manager, format.freq, 1);
+						break;
+					case SDL_SCANCODE_S:
+						cdir=CD_DOWN;
+						sfx(&manager, format.freq, 1);
+						break;
+					case SDL_SCANCODE_D:
+						cdir=CD_RIGHT;
+						sfx(&manager, format.freq, 1);
+						break;
+					case SDL_SCANCODE_ESCAPE:
+						proceed = 0;
+						quit = 1;
+						break;
+					case SDL_SCANCODE_SPACE:
+						do_cast = 1;
+						sfx(&manager, format.freq, 0);
+						break;
+					default:
+						break;
+					}
 					break;
 				default:
 					break;
 				}
-				if (c && c->data)
+			}
+			if (do_cast)
+			{
+				int dmg_f = 0;
+				int dmg_w = 0;
+				int heal = 0;
+				int block =
+					parse_cast(spells, &cast,
+					           &dmg_f,
+					           &dmg_w,
+					           &heal);
+				struct queue_list * entity_n = entities.head;
+				while (entity_n)
 				{
-					*(int*)(c->data) = ehp;
-				}
-				if (ehp < 1) {destroy = 1;}
-				c = rbt_find(entity, COMP_HATCH_TIME);
-				if (c && c->data)
-				{
-					*(int*)(c->data) -= 1;
-					if (*(int*)(c->data) < 1)
+					int destroy = 0;
+					struct rbt_tree * entity
+						= (struct rbt_tree*)(entity_n->data);
+					struct rbt_tree * c;
+					c = rbt_find(entity, COMP_TYPE);
+					int t = -1;
+					if (c && c->data) {t = *(int*)(c->data);}
+					if (t == ENTITY_PHOENIX && dmg_f != 0)
 					{
-						int ecx;
-						int ecy;
-						struct rbt_tree * ec;
-						ec = rbt_find(entity, COMP_X);
-						if (ec && ec->data)
+						int entity_x = 0;
+						c = rbt_find(entity, COMP_X);
+						if (c && c->data)
 						{
-							ecx = *(int*)ec->data;
+							entity_x = *(int*)(c->data);
 						}
-						ec = rbt_find(entity, COMP_Y);
-						if (ec && ec->data)
+						struct queue_list * t = entities.tail;
+						struct rbt_tree * tx =
+							(struct rbt_tree *)(t->data);
+						tx = rbt_find(tx, COMP_X);
+						if (tx && tx->data)
 						{
-							ecy = *(int*)ec->data;
+							entity_x = *(int*)(tx->data);
 						}
 						queue_add(&entities,
-						          (rand() % 2)
-						          ? phoenix(ecx, 16)
-						          : slime(ecx, ecy));
-						destroy = 1;
+						          egg(entity_x + TILE_SIZE,
+						              60));
 					}
+					int emhp = 0;
+					c = rbt_find(entity, COMP_MAX_HP);
+					if (c && c->data) {emhp = *(int*)(c->data);}
+					int ehp = 1;
+					c = rbt_find(entity, COMP_HP);
+					if (c && c->data) {ehp = *(int*)(c->data);}
+					switch (t)
+					{
+					case ENTITY_PHOENIX:
+						ehp -= dmg_w;
+						if (ehp < 0) {ehp = 0;}
+						if (!block){hp -= 8;}
+						break;
+					case ENTITY_SLIME:
+						ehp -= dmg_f;
+						ehp += dmg_w;
+						if (ehp < 0) {ehp = 0;}
+						if (ehp > emhp) {ehp = emhp;}
+						if (!block){hp -= 4;}
+						break;
+					default:
+						break;
+					}
+					if (c && c->data)
+					{
+						*(int*)(c->data) = ehp;
+					}
+					if (ehp < 1) {destroy = 1;}
+					c = rbt_find(entity, COMP_HATCH_TIME);
+					if (c && c->data)
+					{
+						*(int*)(c->data) -= 1;
+						if (*(int*)(c->data) < 1)
+						{
+							int ecx;
+							int ecy;
+							struct rbt_tree * ec;
+							ec = rbt_find(entity, COMP_X);
+							if (ec && ec->data)
+							{
+								ecx = *(int*)ec->data;
+							}
+							ec = rbt_find(entity, COMP_Y);
+							if (ec && ec->data)
+							{
+								ecy = *(int*)ec->data;
+							}
+							queue_add(&entities,
+							          (rand() % 2)
+							          ? phoenix(ecx, 16)
+							          : slime(ecx, ecy));
+							destroy = 1;
+						}
+					}
+					struct queue_list * nxt = entity_n->next;
+					if (destroy)
+					{
+						if (entities.head == entity_n)
+						{
+							entities.head
+								= entity_n->next;
+						}
+						else
+						{
+							entity_n->prev->next
+								= entity_n->next;
+						}
+						if (entities.tail == entity_n)
+						{
+							entities.tail
+								= entity_n->prev;
+						}
+						else
+						{
+							entity_n->next->prev
+								= entity_n->prev;
+						}
+						free_tree(entity);
+						free(entity_n);
+					}
+					entity_n = nxt;
 				}
-				struct queue_list * nxt = entity_n->next;
-				if (destroy)
+				hp += heal;
+				if (hp <= 0) {proceed = 0;}
+				free_queue_and_data(&cast);
+				cdir=0;
+				if (!queue_size(&entities))
 				{
-					if (entities.head == entity_n)
-					{
-						entities.head
-							= entity_n->next;
-					}
-					else
-					{
-						entity_n->prev->next
-							= entity_n->next;
-					}
-					if (entities.tail == entity_n)
-					{
-						entities.tail
-							= entity_n->prev;
-					}
-					else
-					{
-						entity_n->next->prev
-							= entity_n->prev;
-					}
-					free_tree(entity);
-					free(entity_n);
+					proceed = 0;
 				}
-				entity_n = nxt;
 			}
-			hp += heal;
-			if (hp <= 0) {proceed = 0;}
-			free_queue_and_data(&cast);
-			cdir=0;
 		}
+		SDL_PauseAudioDevice(device, 1);
+		proceed = 1;
+		/* game over */
+		while (proceed && !quit)
+		{
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+			SDL_RenderClear(renderer);
+			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+			SDL_RenderFillRect(renderer, NULL);
+			text(renderer, texture,
+			     queue_size(&entities) ? "GAME END" : "SUCCESS!",
+			     (SCR_WIDTH - 9 * FONT_WIDTH)/2,
+			     (SCR_HEIGHT - TILE_SIZE)/2);
+			SDL_RenderPresent(renderer);
+			if (SDL_WaitEventTimeout(&event, 16))
+			{
+				switch (event.type)
+				{
+				case SDL_QUIT:
+					quit = 1;
+					/* fallthrough */
+				case SDL_KEYDOWN:
+					if (event.key.keysym.scancode
+					    == SDL_SCANCODE_ESCAPE)
+					{
+						quit = 1;
+					}
+					proceed = 0;
+					break;
+				default:
+					break;
+				}
+			}
+		}
+		free_queue_and_data(&cast);
+		free_queue_and_data(&entities);
 	}
 
 	struct sfx_list * s = manager.sfx;
@@ -441,8 +544,6 @@ main(int argc, char **argv)
 		free(s);
 		s = manager.sfx;
 	}
-	free_queue_and_data(&cast);
-	free_queue_and_data(&entities);
 	free(context);
 	context = NULL;
 	free(mod_data);
@@ -551,7 +652,7 @@ show_cast(SDL_Renderer * renderer, SDL_Texture * spritesheet,
 	int dir = -1;
 	int pdir = -1;
 	int n = 0;
-	int y = 0;//SCR_HEIGHT * 3 / 4;
+	int y = 0;
 	for (int i = 0; i < 10; ++i)
 	{
 		int x = i * TILE_SIZE;
