@@ -81,7 +81,7 @@ static void draw_hp_bar(SDL_Renderer * renderer, SDL_Texture * spritesheet,
 static int parse_cast(struct trie *, struct queue *, int *, int *, int *);
 
 int
-main(void)
+main(int argc, char ** argv)
 {
 	#ifdef __APPLE__
 	CFBundleRef bundle = CFBundleGetMainBundle();
@@ -315,15 +315,19 @@ main(void)
 				case SDL_KEYUP:
 					switch (event.key.keysym.scancode)
 					{
+					case SDL_SCANCODE_UP:
 					case SDL_SCANCODE_W:
 						if (cdir == CD_UP) {cdir=0;}
 						break;
+					case SDL_SCANCODE_LEFT:
 					case SDL_SCANCODE_A:
 						if (cdir == CD_LEFT) {cdir=0;}
 						break;
+					case SDL_SCANCODE_DOWN:
 					case SDL_SCANCODE_S:
 						if (cdir == CD_DOWN) {cdir=0;}
 						break;
+					case SDL_SCANCODE_RIGHT:
 					case SDL_SCANCODE_D:
 						if (cdir == CD_RIGHT) {cdir=0;}
 						break;
@@ -335,18 +339,22 @@ main(void)
 					if (event.key.repeat) {break;}
 					switch (event.key.keysym.scancode)
 					{
+					case SDL_SCANCODE_UP:
 					case SDL_SCANCODE_W:
 						cdir=CD_UP;
 						sfx(&manager, format.freq, 1);
 						break;
+					case SDL_SCANCODE_LEFT:
 					case SDL_SCANCODE_A:
 						cdir=CD_LEFT;
 						sfx(&manager, format.freq, 1);
 						break;
+					case SDL_SCANCODE_DOWN:
 					case SDL_SCANCODE_S:
 						cdir=CD_DOWN;
 						sfx(&manager, format.freq, 1);
 						break;
+					case SDL_SCANCODE_RIGHT:
 					case SDL_SCANCODE_D:
 						cdir=CD_RIGHT;
 						sfx(&manager, format.freq, 1);
@@ -491,6 +499,7 @@ main(void)
 				}
 				hp += heal;
 				if (hp <= 0) {proceed = 0;}
+				if (hp > max_hp) {hp = max_hp;}
 				free_queue_and_data(&cast);
 				cdir=0;
 				if (!queue_size(&entities))
